@@ -1,0 +1,610 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Holo Cube 手勢</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      touch-action: none;
+      font-family: sans-serif;
+      color: #eee;
+    }
+    canvas.cube {
+      display: block;
+      touch-action: none;
+    }
+    #ui {
+      position: fixed;
+      left: 12px;
+      top: 12px;
+      z-index: 2;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 380px;
+    }
+    #previewWrap {
+      position: relative;
+      width: 320px;
+      line-height: 0;
+      border: 1px solid #444;
+      background: #111;
+      cursor: crosshair;
+    }
+    #preview {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    #panel {
+      background: rgba(0, 0, 0, 0.72);
+      padding: 8px 10px;
+      border-radius: 6px;
+      font-size: 13px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 12px;
+      align-items: center;
+    }
+    #panel label { display: flex; align-items: center; gap: 6px; }
+    #panel select, #panel button {
+      background: #222;
+      color: #eee;
+      border: 1px solid #666;
+      border-radius: 4px;
+      padding: 3px 6px;
+    }
+    #status {
+      min-width: 8em;
+      color: #9b7dff;
+    }
+    #err {
+      color: #ff6b6b;
+      font-size: 13px;
+      max-width: 320px;
+    }
+    body.hideDebug #previewWrap,
+    body.hideDebug #panel { display: none; }
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <div id="previewWrap">
+      <canvas id="preview"></canvas>
+    </div>
+    <div id="panel">
+      <label>鏡頭
+        <select id="camSelect"></select>
+      </label>
+      <label>旋轉
+        <select id="rotSelect">
+          <option value="0">0°</option>
+          <option value="90">90°</option>
+          <option value="180">180°</option>
+          <option value="270">270°</option>
+        </select>
+      </label>
+      <label><input type="checkbox" id="mirrorChk"> 鏡像</label>
+      <label><input type="checkbox" id="debugChk" checked> 除錯</label>
+      <span id="status">啟動中</span>
+    </div>
+    <div id="err"></div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script type="module">
+    const MP_VER = "0.10.21";
+    const WASM_URL = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@" + MP_VER + "/wasm";
+    const MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task";
+    const PROCESS_MAX = 480;
+    const STORE_KEY = "holoGesture.v1";
+    const MIN_ROI = 0.08;
+    const HANDLE = 14;
+    const HAND_CONNECTIONS = [
+      [0, 1], [1, 2], [2, 3], [3, 4],
+      [0, 5], [5, 6], [6, 7], [7, 8],
+      [0, 9], [9, 10], [10, 11], [11, 12],
+      [0, 13], [13, 14], [14, 15], [15, 16],
+      [0, 17], [17, 18], [18, 19], [19, 20],
+      [5, 9], [9, 13], [13, 17]
+    ];
+
+    const preview = document.getElementById("preview");
+    const previewWrap = document.getElementById("previewWrap");
+    const camSelect = document.getElementById("camSelect");
+    const rotSelect = document.getElementById("rotSelect");
+    const mirrorChk = document.getElementById("mirrorChk");
+    const debugChk = document.getElementById("debugChk");
+    const statusEl = document.getElementById("status");
+    const errEl = document.getElementById("err");
+    const previewCtx = preview.getContext("2d");
+
+    const video = document.createElement("video");
+    video.playsInline = true;
+    video.muted = true;
+    video.autoplay = true;
+
+    const process = document.createElement("canvas");
+    const processCtx = process.getContext("2d", { willReadFrequently: true });
+
+    const settings = loadSettings();
+    rotSelect.value = String(settings.rot);
+    mirrorChk.checked = settings.mirror;
+    debugChk.checked = settings.debug;
+    document.body.classList.toggle("hideDebug", !settings.debug);
+
+    let roi = settings.roi;
+    let stream = null;
+    let landmarker = null;
+    let lastVideoTime = -1;
+    let lastPalm = null;
+    let pinchStartDist = 0;
+    let pinchStartScale = 1;
+    let drag = null;
+    let lastLm = null;
+    let inRoiNow = false;
+
+    // --- cube (same contract as cube/index.html) ---
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+    const cubeCam = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+    cubeCam.position.z = 4;
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.domElement.className = "cube";
+    document.body.appendChild(renderer.domElement);
+
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 1.5, 1.5),
+      [
+        new THREE.MeshLambertMaterial({ color: 0xff3b30 }),
+        new THREE.MeshLambertMaterial({ color: 0xff9500 }),
+        new THREE.MeshLambertMaterial({ color: 0xffffff }),
+        new THREE.MeshLambertMaterial({ color: 0xffcc00 }),
+        new THREE.MeshLambertMaterial({ color: 0x34c759 }),
+        new THREE.MeshLambertMaterial({ color: 0x007aff })
+      ]
+    );
+    cube.rotation.set(0.45, 0.65, 0);
+    scene.add(cube);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    keyLight.position.set(2, 3, 4);
+    scene.add(keyLight);
+
+    let scale = 1;
+    function applyScale() {
+      const s = Math.min(2.4, Math.max(0.4, scale));
+      scale = s;
+      cube.scale.setScalar(s);
+    }
+
+    window.HoloCube = {
+      rotateBy: function (dx, dy) {
+        cube.rotation.y += dx;
+        cube.rotation.x += dy;
+      },
+      setScale: function (s) {
+        scale = s;
+        applyScale();
+      }
+    };
+
+    const pointers = new Map();
+    let mousePinchStart = 0;
+    let mousePinchScale = 1;
+    function pointOn(ev) { return { x: ev.clientX, y: ev.clientY }; }
+    function mousePinchDist() {
+      const pts = Array.from(pointers.values());
+      return Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
+    }
+    renderer.domElement.addEventListener("pointerdown", function (ev) {
+      ev.preventDefault();
+      pointers.set(ev.pointerId, pointOn(ev));
+      renderer.domElement.setPointerCapture(ev.pointerId);
+      if (pointers.size === 2) {
+        mousePinchStart = mousePinchDist();
+        mousePinchScale = scale;
+      }
+    });
+    renderer.domElement.addEventListener("pointermove", function (ev) {
+      if (!pointers.has(ev.pointerId)) return;
+      const prev = pointers.get(ev.pointerId);
+      const now = pointOn(ev);
+      pointers.set(ev.pointerId, now);
+      if (pointers.size === 1) {
+        window.HoloCube.rotateBy((now.x - prev.x) * 0.01, (now.y - prev.y) * 0.01);
+      } else if (pointers.size === 2 && mousePinchStart > 0) {
+        window.HoloCube.setScale(mousePinchScale * (mousePinchDist() / mousePinchStart));
+      }
+    });
+    function endPointer(ev) {
+      pointers.delete(ev.pointerId);
+      if (pointers.size < 2) mousePinchStart = 0;
+    }
+    renderer.domElement.addEventListener("pointerup", endPointer);
+    renderer.domElement.addEventListener("pointercancel", endPointer);
+    renderer.domElement.addEventListener("wheel", function (ev) {
+      ev.preventDefault();
+      window.HoloCube.setScale(scale * Math.pow(1.0015, -ev.deltaY));
+    }, { passive: false });
+    window.addEventListener("resize", function () {
+      cubeCam.aspect = innerWidth / innerHeight;
+      cubeCam.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    function loadSettings() {
+      const fallback = {
+        rot: 0,
+        mirror: false,
+        debug: true,
+        cameraId: "",
+        roi: { x: 0.12, y: 0.42, w: 0.42, h: 0.46 }
+      };
+      try {
+        const raw = localStorage.getItem(STORE_KEY);
+        if (!raw) return fallback;
+        const parsed = JSON.parse(raw);
+        return Object.assign(fallback, parsed, {
+          roi: Object.assign(fallback.roi, parsed.roi || {})
+        });
+      } catch (e) {
+        return fallback;
+      }
+    }
+
+    function saveSettings() {
+      settings.rot = Number(rotSelect.value);
+      settings.mirror = mirrorChk.checked;
+      settings.debug = debugChk.checked;
+      settings.cameraId = camSelect.value || settings.cameraId;
+      settings.roi = roi;
+      localStorage.setItem(STORE_KEY, JSON.stringify(settings));
+    }
+
+    function setErr(msg) { errEl.textContent = msg || ""; }
+    function setStatus(msg) { statusEl.textContent = msg; }
+
+    function clampRoi(r) {
+      r.w = Math.min(1, Math.max(MIN_ROI, r.w));
+      r.h = Math.min(1, Math.max(MIN_ROI, r.h));
+      r.x = Math.min(1 - r.w, Math.max(0, r.x));
+      r.y = Math.min(1 - r.h, Math.max(0, r.y));
+      return r;
+    }
+
+    function palmOf(lm) {
+      const ids = [0, 5, 9, 13, 17];
+      let x = 0, y = 0;
+      for (const i of ids) {
+        x += lm[i].x;
+        y += lm[i].y;
+      }
+      return { x: x / ids.length, y: y / ids.length };
+    }
+
+    function inRoi(p) {
+      return p.x >= roi.x && p.x <= roi.x + roi.w && p.y >= roi.y && p.y <= roi.y + roi.h;
+    }
+
+    function pinchDist(lm) {
+      const a = lm[4], b = lm[8];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    }
+
+    function outputSize() {
+      const rot = Number(rotSelect.value);
+      const vw = video.videoWidth || 640;
+      const vh = video.videoHeight || 480;
+      const swapped = rot === 90 || rot === 270;
+      let w = swapped ? vh : vw;
+      let h = swapped ? vw : vh;
+      const longSide = Math.max(w, h);
+      if (longSide > PROCESS_MAX) {
+        const k = PROCESS_MAX / longSide;
+        w = Math.round(w * k);
+        h = Math.round(h * k);
+      }
+      return { w, h };
+    }
+
+    function drawTransformed() {
+      const { w, h } = outputSize();
+      if (process.width !== w || process.height !== h) {
+        process.width = w;
+        process.height = h;
+      }
+      const rot = Number(rotSelect.value);
+      const mirror = mirrorChk.checked;
+      processCtx.save();
+      processCtx.clearRect(0, 0, w, h);
+      processCtx.translate(w / 2, h / 2);
+      processCtx.rotate(rot * Math.PI / 180);
+      if (mirror) processCtx.scale(-1, 1);
+      const dw = (rot === 90 || rot === 270) ? h : w;
+      const dh = (rot === 90 || rot === 270) ? w : h;
+      processCtx.drawImage(video, -dw / 2, -dh / 2, dw, dh);
+      processCtx.restore();
+    }
+
+    function eventToNorm(ev) {
+      const r = preview.getBoundingClientRect();
+      return {
+        x: (ev.clientX - r.left) / r.width,
+        y: (ev.clientY - r.top) / r.height
+      };
+    }
+
+    function hitHandle(p) {
+      const corners = [
+        { id: "nw", x: roi.x, y: roi.y },
+        { id: "ne", x: roi.x + roi.w, y: roi.y },
+        { id: "sw", x: roi.x, y: roi.y + roi.h },
+        { id: "se", x: roi.x + roi.w, y: roi.y + roi.h }
+      ];
+      const r = preview.getBoundingClientRect();
+      const hx = HANDLE / r.width;
+      const hy = HANDLE / r.height;
+      for (const c of corners) {
+        if (Math.abs(p.x - c.x) <= hx && Math.abs(p.y - c.y) <= hy) return c.id;
+      }
+      if (inRoi(p)) return "move";
+      return null;
+    }
+
+    previewWrap.addEventListener("pointerdown", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const p = eventToNorm(ev);
+      const which = hitHandle(p);
+      drag = {
+        which: which || "new",
+        start: p,
+        orig: { x: roi.x, y: roi.y, w: roi.w, h: roi.h }
+      };
+      previewWrap.setPointerCapture(ev.pointerId);
+      if (drag.which === "new") {
+        roi = clampRoi({ x: p.x, y: p.y, w: MIN_ROI, h: MIN_ROI });
+      }
+    });
+    previewWrap.addEventListener("pointermove", function (ev) {
+      if (!drag) return;
+      const p = eventToNorm(ev);
+      const o = drag.orig;
+      if (drag.which === "new") {
+        const x0 = Math.min(drag.start.x, p.x);
+        const y0 = Math.min(drag.start.y, p.y);
+        roi = clampRoi({
+          x: x0,
+          y: y0,
+          w: Math.abs(p.x - drag.start.x),
+          h: Math.abs(p.y - drag.start.y)
+        });
+      } else if (drag.which === "move") {
+        roi = clampRoi({
+          x: o.x + (p.x - drag.start.x),
+          y: o.y + (p.y - drag.start.y),
+          w: o.w,
+          h: o.h
+        });
+      } else {
+        let x1 = o.x, y1 = o.y, x2 = o.x + o.w, y2 = o.y + o.h;
+        if (drag.which.indexOf("n") >= 0) y1 = p.y;
+        if (drag.which.indexOf("s") >= 0) y2 = p.y;
+        if (drag.which.indexOf("w") >= 0) x1 = p.x;
+        if (drag.which.indexOf("e") >= 0) x2 = p.x;
+        roi = clampRoi({
+          x: Math.min(x1, x2),
+          y: Math.min(y1, y2),
+          w: Math.abs(x2 - x1),
+          h: Math.abs(y2 - y1)
+        });
+      }
+    });
+    previewWrap.addEventListener("pointerup", function () {
+      drag = null;
+      saveSettings();
+    });
+    previewWrap.addEventListener("pointercancel", function () { drag = null; });
+
+    rotSelect.addEventListener("change", function () { resetHandTrack(); saveSettings(); });
+    mirrorChk.addEventListener("change", function () { resetHandTrack(); saveSettings(); });
+    debugChk.addEventListener("change", function () {
+      document.body.classList.toggle("hideDebug", !debugChk.checked);
+      saveSettings();
+    });
+    camSelect.addEventListener("change", function () {
+      saveSettings();
+      startCamera(camSelect.value);
+    });
+
+    async function fillCameras(preferredId) {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const cams = devices.filter(function (d) { return d.kind === "videoinput"; });
+      camSelect.innerHTML = "";
+      cams.forEach(function (d, i) {
+        const opt = document.createElement("option");
+        opt.value = d.deviceId;
+        opt.textContent = d.label || ("鏡頭 " + (i + 1));
+        camSelect.appendChild(opt);
+      });
+      if (preferredId && cams.some(function (c) { return c.deviceId === preferredId; })) {
+        camSelect.value = preferredId;
+      }
+      return cams;
+    }
+
+    async function startCamera(deviceId) {
+      if (stream) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        stream = null;
+      }
+      const constraints = deviceId
+        ? { video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } } }
+        : { video: { width: { ideal: 1280 }, height: { ideal: 720 } } };
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (e) {
+        if (deviceId) {
+          stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        } else {
+          throw e;
+        }
+      }
+      video.srcObject = stream;
+      await video.play();
+      await fillCameras(stream.getVideoTracks()[0].getSettings().deviceId || deviceId || "");
+      saveSettings();
+    }
+
+    function resetHandTrack() {
+      lastPalm = null;
+      pinchStartDist = 0;
+    }
+
+    function applyHand(lm) {
+      const palm = palmOf(lm);
+      if (!lastPalm) {
+        lastPalm = palm;
+        pinchStartDist = pinchDist(lm);
+        pinchStartScale = scale;
+        return;
+      }
+      const sm = {
+        x: lastPalm.x * 0.35 + palm.x * 0.65,
+        y: lastPalm.y * 0.35 + palm.y * 0.65
+      };
+      const dx = sm.x - lastPalm.x;
+      const dy = sm.y - lastPalm.y;
+      lastPalm = sm;
+      if (Math.hypot(dx, dy) > 0.0015) {
+        window.HoloCube.rotateBy(dx * 4.2, dy * 4.2);
+      }
+      const pin = pinchDist(lm);
+      if (pinchStartDist > 0.02) {
+        window.HoloCube.setScale(pinchStartScale * (pin / pinchStartDist));
+      }
+    }
+
+    function drawPreview(lm, inside) {
+      if (!debugChk.checked) return;
+      const w = process.width;
+      const h = process.height;
+      if (!w || !h) return;
+      if (preview.width !== w || preview.height !== h) {
+        preview.width = w;
+        preview.height = h;
+      }
+      previewCtx.drawImage(process, 0, 0);
+      const rx = roi.x * w, ry = roi.y * h, rw = roi.w * w, rh = roi.h * h;
+      previewCtx.fillStyle = inside ? "rgba(155,125,255,0.18)" : "rgba(155,125,255,0.08)";
+      previewCtx.fillRect(rx, ry, rw, rh);
+      previewCtx.strokeStyle = "#9b7dff";
+      previewCtx.lineWidth = 2;
+      previewCtx.strokeRect(rx, ry, rw, rh);
+      previewCtx.fillStyle = "#cbb9ff";
+      [[roi.x, roi.y], [roi.x + roi.w, roi.y], [roi.x, roi.y + roi.h], [roi.x + roi.w, roi.y + roi.h]].forEach(function (pt) {
+        previewCtx.fillRect(pt[0] * w - 4, pt[1] * h - 4, 8, 8);
+      });
+      if (!lm) return;
+      previewCtx.strokeStyle = inside ? "#7dffb3" : "#888";
+      previewCtx.lineWidth = 2;
+      HAND_CONNECTIONS.forEach(function (pair) {
+        const a = lm[pair[0]], b = lm[pair[1]];
+        previewCtx.beginPath();
+        previewCtx.moveTo(a.x * w, a.y * h);
+        previewCtx.lineTo(b.x * w, b.y * h);
+        previewCtx.stroke();
+      });
+      previewCtx.fillStyle = inside ? "#7dffb3" : "#888";
+      lm.forEach(function (p) {
+        previewCtx.beginPath();
+        previewCtx.arc(p.x * w, p.y * h, 3, 0, Math.PI * 2);
+        previewCtx.fill();
+      });
+    }
+
+    function pickHand(result) {
+      if (!result || !result.landmarks || !result.landmarks.length) return { lm: null, any: false, inside: false };
+      let outside = null;
+      for (let i = 0; i < result.landmarks.length; i++) {
+        const lm = result.landmarks[i];
+        if (inRoi(palmOf(lm))) return { lm: lm, any: true, inside: true };
+        if (!outside) outside = lm;
+      }
+      return { lm: outside, any: true, inside: false };
+    }
+
+    function tick() {
+      renderer.render(scene, cubeCam);
+      if (video.readyState >= 2) {
+        if (video.currentTime !== lastVideoTime) {
+          lastVideoTime = video.currentTime;
+          drawTransformed();
+          if (landmarker && process.width) {
+            const result = landmarker.detectForVideo(process, performance.now());
+            const picked = pickHand(result);
+            lastLm = picked.lm;
+            inRoiNow = picked.inside;
+            if (picked.inside) {
+              applyHand(picked.lm);
+              setStatus("手在 ROI");
+            } else {
+              lastPalm = null;
+              pinchStartDist = 0;
+              setStatus(picked.any ? "ROI 外" : "沒看到手");
+            }
+          }
+        }
+        drawPreview(lastLm, inRoiNow);
+      }
+      requestAnimationFrame(tick);
+    }
+
+    async function main() {
+      setStatus("載入手勢模型");
+      const { FilesetResolver, HandLandmarker } = await import(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@" + MP_VER + "/+esm"
+      );
+      const vision = await FilesetResolver.forVisionTasks(WASM_URL);
+      let lastErr = null;
+      for (const delegate of ["GPU", "CPU"]) {
+        try {
+          landmarker = await HandLandmarker.createFromOptions(vision, {
+            baseOptions: { modelAssetPath: MODEL_URL, delegate: delegate },
+            runningMode: "VIDEO",
+            numHands: 2,
+            minHandDetectionConfidence: 0.55,
+            minHandPresenceConfidence: 0.55,
+            minTrackingConfidence: 0.5
+          });
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (!landmarker) throw lastErr || new Error("HandLandmarker 啟動失敗");
+
+      setStatus("開啟鏡頭");
+      await startCamera(settings.cameraId);
+      await fillCameras(camSelect.value);
+      setStatus("沒看到手");
+    }
+
+    tick();
+    main().catch(function (e) {
+      console.error(e);
+      setErr("鏡頭或 MediaPipe 失敗：改用 Chrome、允許鏡頭、選 USB 那顆。 " + (e && e.message ? e.message : ""));
+      setStatus("失敗");
+    });
+  </script>
+</body>
+</html>
