@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>Holo Cube v1</title>
+  <style>
+    html, body {
+      margin: 0;
+      height: 100%;
+      background: #000;
+      overflow: hidden;
+      touch-action: none;
+    }
+    canvas {
+      display: block;
+      touch-action: none;
+    }
+  </style>
+</head>
+<body>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+  <script>
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 100);
+    camera.position.z = 4;
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+    renderer.setSize(innerWidth, innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    // Right, left, top, bottom, front, back — bright and distinct
+    const cube = new THREE.Mesh(
+      new THREE.BoxGeometry(1.5, 1.5, 1.5),
+      [
+        new THREE.MeshLambertMaterial({ color: 0xff3b30 }),
+        new THREE.MeshLambertMaterial({ color: 0xff9500 }),
+        new THREE.MeshLambertMaterial({ color: 0xffffff }),
+        new THREE.MeshLambertMaterial({ color: 0xffcc00 }),
+        new THREE.MeshLambertMaterial({ color: 0x34c759 }),
+        new THREE.MeshLambertMaterial({ color: 0x007aff })
+      ]
+    );
+    cube.rotation.set(0.45, 0.65, 0);
+    scene.add(cube);
+
+    scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+    const keyLight = new THREE.DirectionalLight(0xffffff, 0.9);
+    keyLight.position.set(2, 3, 4);
+    scene.add(keyLight);
+
+    let scale = 1;
+    function applyScale() {
+      const s = Math.min(2.4, Math.max(0.4, scale));
+      scale = s;
+      cube.scale.setScalar(s);
+    }
+
+    window.HoloCube = {
+      rotateBy: function (dx, dy) {
+        cube.rotation.y += dx;
+        cube.rotation.x += dy;
+      },
+      setScale: function (s) {
+        scale = s;
+        applyScale();
+      }
+    };
+
+    const pointers = new Map();
+    let pinchStartDist = 0;
+    let pinchStartScale = 1;
+
+    function pointOn(ev) {
+      return { x: ev.clientX, y: ev.clientY };
+    }
+
+    function pinchDist() {
+      const pts = Array.from(pointers.values());
+      const dx = pts[0].x - pts[1].x;
+      const dy = pts[0].y - pts[1].y;
+      return Math.hypot(dx, dy);
+    }
+
+    renderer.domElement.addEventListener('pointerdown', function (ev) {
+      ev.preventDefault();
+      pointers.set(ev.pointerId, pointOn(ev));
+      renderer.domElement.setPointerCapture(ev.pointerId);
+      if (pointers.size === 2) {
+        pinchStartDist = pinchDist();
+        pinchStartScale = scale;
+      }
+    });
+
+    renderer.domElement.addEventListener('pointermove', function (ev) {
+      if (!pointers.has(ev.pointerId)) return;
+      const prev = pointers.get(ev.pointerId);
+      const now = pointOn(ev);
+      pointers.set(ev.pointerId, now);
+
+      if (pointers.size === 1) {
+        window.HoloCube.rotateBy((now.x - prev.x) * 0.01, (now.y - prev.y) * 0.01);
+      } else if (pointers.size === 2 && pinchStartDist > 0) {
+        window.HoloCube.setScale(pinchStartScale * (pinchDist() / pinchStartDist));
+      }
+    });
+
+    function endPointer(ev) {
+      pointers.delete(ev.pointerId);
+      if (pointers.size < 2) pinchStartDist = 0;
+    }
+    renderer.domElement.addEventListener('pointerup', endPointer);
+    renderer.domElement.addEventListener('pointercancel', endPointer);
+
+    renderer.domElement.addEventListener('wheel', function (ev) {
+      ev.preventDefault();
+      window.HoloCube.setScale(scale * Math.pow(1.0015, -ev.deltaY));
+    }, { passive: false });
+
+    window.addEventListener('resize', function () {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    });
+
+    function tick() {
+      renderer.render(scene, camera);
+      requestAnimationFrame(tick);
+    }
+    tick();
+  </script>
+</body>
+</html>
