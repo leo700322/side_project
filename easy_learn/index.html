@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>輕鬆學習系統 EasyLearn — 無痛闖關 × 多邊形能力分析</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- Top Dopamine & Status Header -->
+  <header class="top-header">
+    <div class="header-inner">
+      <div class="brand-area">
+        <div class="brand-logo">⚡</div>
+        <div>
+          <div class="brand-title">輕鬆學習系統 EasyLearn</div>
+          <div class="brand-subtitle">結合《大腦喜歡這樣學》× 5 階段無痛闖關（ADHD 友善・全齡適用）</div>
+        </div>
+      </div>
+
+      <div class="stats-pills">
+        <div class="stat-pill highlight-combo" id="pill-combo" title="連續答對觸發多巴胺加成">
+          🔥 連擊 Combo <span id="stat-combo">0</span>
+        </div>
+        <div class="stat-pill" id="pill-coins" title="過關與破冰獎勵金幣">
+          🪙 金幣 <span id="stat-coins">85</span>
+        </div>
+        <div class="stat-pill" id="pill-xp" title="累積學習經驗值">
+          ⭐ 經驗 <span id="stat-xp">320</span> XP
+        </div>
+        <div class="stat-pill" id="pill-mastery" title="第7、14天複習皆通過才算真精通">
+          🏅 已精通 <span id="stat-mastered">1</span> / <span id="stat-total">6</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <main class="main-container">
+    <!-- Audience / Stage Switcher -->
+    <section class="audience-bar">
+      <div>
+        <div style="font-weight: 700; font-size: 0.95rem;">🎯 切換學習階段與範例庫：</div>
+        <div id="stage-desc" style="font-size: 0.84rem; color: var(--text-muted);">
+          載入中...
+        </div>
+      </div>
+      <div class="stage-buttons" id="stage-buttons"></div>
+    </section>
+
+    <!-- Main 4 Functional Tabs -->
+    <nav class="nav-tabs">
+      <button class="nav-tab active" data-tab="tab-quest" onclick="EasyLearnApp.switchTab('tab-quest')">
+        🎮 1. 開始無痛闖關 (5–10分)
+      </button>
+      <button class="nav-tab" data-tab="tab-dashboard" onclick="EasyLearnApp.switchTab('tab-dashboard')">
+        📊 2. 多邊形能力與三層診斷
+      </button>
+      <button class="nav-tab" data-tab="tab-import" onclick="EasyLearnApp.switchTab('tab-import')">
+        📥 3. 全階段教材匯入中心
+      </button>
+      <button class="nav-tab" data-tab="tab-settings" onclick="EasyLearnApp.switchTab('tab-settings')">
+        🤖 4. AI 學伴與系統設定
+      </button>
+    </nav>
+
+    <!-- TAB 1: 5-Stage Gamified Quest Loop + Live Polygon Radar -->
+    <section id="tab-quest" class="tab-panel active">
+      <div class="grid-2">
+        <!-- Left: Active Quest Card -->
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div>
+                <span class="badge badge-blue" id="quest-publisher-badge">MVP 示範</span>
+                <span class="badge badge-gold" id="quest-subject-badge">英文（聽說）</span>
+              </div>
+              <div style="display: flex; align-items: center; gap: 8px;">
+                <label for="quest-selector" style="font-size: 0.85rem; color: var(--text-muted);">選擇關卡：</label>
+                <select id="quest-selector" class="select-field" style="width: auto; margin: 0; padding: 6px 10px;" onchange="EasyLearnApp.selectQuest(this.value)"></select>
+              </div>
+            </div>
+
+            <!-- Gentle 5-Minute Pomodoro Bar -->
+            <div class="pomodoro-bar">
+              <div style="font-size: 0.86rem; font-weight: 600;">
+                🍅 專注保護罩：<span id="timer-display">05:00</span>
+                <span style="color: var(--text-muted); font-weight: 400;">（只管專心 5 分鐘，時間到即可休息領獎）</span>
+              </div>
+              <div class="timer-progress-wrap">
+                <div class="timer-progress-fill" id="timer-fill"></div>
+              </div>
+              <button class="btn btn-outline btn-sm" onclick="EasyLearnApp.toggleTimer()" id="timer-btn">暫停/繼續</button>
+            </div>
+
+            <!-- 5-Stage Stepper -->
+            <div class="quest-stepper" id="quest-stepper"></div>
+
+            <!-- Dynamic Quest Stage Content -->
+            <div id="quest-stage-container"></div>
+          </div>
+        </div>
+
+        <!-- Right: Live 6-Axis Polygon Radar & Quick Weak-Spot Alert -->
+        <div>
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">⬢ 自我能力多邊形（即時成長）</div>
+              <div style="display: flex; gap: 6px;">
+                <button class="btn btn-outline btn-sm" id="btn-radar-brain" onclick="EasyLearnApp.setRadarMode('brain')">大腦學習六力</button>
+                <button class="btn btn-outline btn-sm" id="btn-radar-subject" onclick="EasyLearnApp.setRadarMode('subject')">學科領域六力</button>
+              </div>
+            </div>
+
+            <div class="radar-container">
+              <svg id="radar-svg-main" class="radar-svg" viewBox="0 0 320 300"></svg>
+              <div class="radar-legend">
+                <span><strong style="color: #38bdf8;">■ 藍色實線</strong>：目前能力值</span>
+                <span><strong style="color: #94a3b8;">┈ 虛線</strong>：初始基準值</span>
+              </div>
+            </div>
+
+            <div style="background: var(--bg-soft); border-radius: 12px; padding: 12px 14px; margin-top: 10px; font-size: 0.88rem;">
+              <div style="font-weight: 700; color: var(--accent-gold); margin-bottom: 4px;">💡 為什麼這個框架最省力有效？</div>
+              <div style="color: var(--text-muted);">
+                不從頭念到尾！先用 <strong>10 秒破冰</strong> 啟動多巴胺 → <strong>生活比喻組塊</strong> 抓 1 個核心 → <strong>階梯練習（錯題不扣分）</strong> → <strong>滿 80% 當小老師抓錯</strong>，每過一關六角形都會向外擴張！
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">🔋 今日待充能（需補強章節）</div>
+              <button class="btn btn-outline btn-sm" onclick="EasyLearnApp.switchTab('tab-dashboard')">看完整診斷 →</button>
+            </div>
+            <div id="quick-weak-list"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 2: 3-Level Drill-Down Dashboard & Excel Spaced Repetition Table -->
+    <section id="tab-dashboard" class="tab-panel">
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">📊 三層式自我能力診斷 Dashboard（科目 → 單元 → 章節缺失）</div>
+            <div style="font-size: 0.86rem; color: var(--text-muted);">
+              點擊下方卡片可從「大科目」鑽取到「單元」與「具體卡關點」，並直接啟動 3 分鐘專項補強。
+            </div>
+          </div>
+          <div style="display: flex; gap: 10px; align-items: center;">
+            <span class="badge badge-green" id="dash-summary-badge">精通率計算中</span>
+            <button class="btn btn-outline btn-sm" onclick="EasyLearnApp.resetFilter()">顯示全部科目</button>
+          </div>
+        </div>
+
+        <!-- Level 1: Subject Overview -->
+        <h3 style="font-size: 0.96rem; color: var(--primary); margin-bottom: 10px;">
+          【第 1 層：大方向】各科目能力與精通率總覽（點擊科目可篩選下方單元）
+        </h3>
+        <div class="drill-grid" id="dash-level-1"></div>
+
+        <!-- Level 2: Publisher / Unit Traffic Lights -->
+        <h3 style="font-size: 0.96rem; color: var(--accent-gold); margin: 18px 0 10px;">
+          【第 2 層：中單元】各版本／單元紅黃綠燈狀態（🟢 穩定 ／ 🟡 學習中 ／ 🔴 需優先補強）
+        </h3>
+        <div class="drill-grid" id="dash-level-2"></div>
+
+        <!-- Level 3: Chapter / Concept Diagnosis & 1-Click 3-Min Fix -->
+        <h3 style="font-size: 0.96rem; color: var(--accent-green); margin: 18px 0 10px;">
+          【第 3 層：小章節與觀念缺失】具體問題診斷 ＋ 一鍵 3 分鐘補強
+        </h3>
+        <div id="dash-level-3"></div>
+      </div>
+
+      <!-- Spaced Repetition Tracking Table (Matches Jay's Excel Sheet 4) -->
+      <div class="card">
+        <div class="card-header">
+          <div>
+            <div class="card-title">🗓️ 間隔複習追蹤表（對齊規劃表：當天、第 1、3、7、14 天）</div>
+            <div style="font-size: 0.84rem; color: var(--text-muted);">
+              規則：不以「看完課程」算精通，必須 <strong>第 7 天與第 14 天延遲測驗皆 ✓</strong> 才頒發「🏅 已精通」徽章。（直接點擊表格內的格位可切換 ✓ / ✗ / 空白）
+            </div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="EasyLearnApp.exportCSV()">📥 匯出 CSV 追蹤表</button>
+        </div>
+
+        <div class="table-wrap">
+          <table class="tracking-table">
+            <thead>
+              <tr>
+                <th>項目（章節／單字）</th>
+                <th>版本／科目</th>
+                <th>首次學習日</th>
+                <th style="text-align:center;">當天回想</th>
+                <th style="text-align:center;">第1天</th>
+                <th style="text-align:center;">第3天</th>
+                <th style="text-align:center;">第7天</th>
+                <th style="text-align:center;">第14天</th>
+                <th style="text-align:center;">通過次數</th>
+                <th>精通狀態</th>
+                <th>動作</th>
+              </tr>
+            </thead>
+            <tbody id="tracking-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 3: All-Stage Textbook & Notes Import Center -->
+    <section id="tab-import" class="tab-panel">
+      <div class="grid-2">
+        <!-- Left: 108 Curriculum 3 Publishers (Elem/Junior/Senior) One-Click Skeleton Import -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">📚 A. 國中小（康軒・翰林・南一）＆ 高中課綱骨架一鍵匯入</div>
+            <span class="badge badge-blue">教育部 108 課綱對齊</span>
+          </div>
+          <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 14px;">
+            選擇年級、出版社與科目，即可一鍵將「單元 → 章節」骨架與公開示範題載入系統，亦可為任一章節掛載自己的練習題。
+          </p>
+
+          <div id="catalog-list"></div>
+        </div>
+
+        <!-- Right: High School / University / Graduate / Adult Note-to-Quest Generator -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">✨ B. 高中／大學／研究所／成人：貼上講義或筆記 → 自動轉闖關卡</div>
+            <span class="badge badge-gold">免金鑰 ＆ AI 雙支援</span>
+          </div>
+          <p style="font-size: 0.88rem; color: var(--text-muted); margin-bottom: 12px;">
+            針對沒有固定三家出版社的<strong>高中選修、大學原文書、研究所論文、成人證照或英文單字</strong>：貼上一段重點，系統自動幫你拆成「10秒破冰 → 生活比喻重點卡 → 3 階梯練習 → 教 AI 學伴抓錯題」！
+          </p>
+
+          <label style="font-size: 0.85rem; font-weight: 700;">1. 所屬階段與科目名稱</label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <select id="custom-stage" class="select-field">
+              <option value="adult">成人／大學／研究所</option>
+              <option value="senior">高中（必修／選修）</option>
+              <option value="junior">國中（康軒／翰林／南一補充）</option>
+              <option value="elem">國小（課外／補充）</option>
+            </select>
+            <input type="text" id="custom-subject" class="input-field" placeholder="例如：英文聽說、演算法、生物化學" value="英文（聽說）" />
+          </div>
+
+          <label style="font-size: 0.85rem; font-weight: 700;">2. 單元與章節／主題名稱</label>
+          <input type="text" id="custom-title" class="input-field" placeholder="例如：單字 confirm（確認預約） 或 機器學習 Overfitting" />
+
+          <label style="font-size: 0.85rem; font-weight: 700;">3. 核心重點句子（將自動生成挖空練習與抓錯題）</label>
+          <textarea id="custom-core" class="textarea-field" placeholder="貼上你想記住的 1~3 句重點，例如：confirm 是動詞「確認」，常用於 Please confirm your reservation（請確認您的訂位）。常見錯誤是把 confirm 跟 conform（遵守）搞混。"></textarea>
+
+          <label style="font-size: 0.85rem; font-weight: 700;">4. 大腦組塊生活比喻（選填，不填由系統自動產生提示）</label>
+          <input type="text" id="custom-metaphor" class="input-field" placeholder="例如：con(共同) + firm(堅定穩固) ＝ 雙方都蓋章確定！" />
+
+          <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px;">
+            <button class="btn btn-primary" onclick="EasyLearnApp.createCustomQuest(false)">
+              ⚡ 免金鑰立即生成闖關卡
+            </button>
+            <button class="btn btn-gold" onclick="EasyLearnApp.createCustomQuest(true)">
+              🤖 用 AI API 智慧出題生成
+            </button>
+            <button class="btn btn-outline btn-sm" onclick="EasyLearnApp.fillSampleNote()">
+              填入範例筆記試試看
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- TAB 4: AI Buddy API Settings & Backup -->
+    <section id="tab-settings" class="tab-panel">
+      <div class="grid-2">
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🤖「關卡 3：教 AI 學伴」互動模式與 API 設定</div>
+            <span class="badge badge-green">預設免金鑰即可玩</span>
+          </div>
+          <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 14px;">
+            系統預設提供<strong>「A. 免金鑰點選抓錯模式」</strong>（最適合小朋友與快速闖關，零延遲）。若你想在「關卡 3：當小老師」用自己的話打字或語音跟 AI 學伴自由對話，可在下方填入 API Key 或本機模型網址：
+          </p>
+
+          <label style="font-size: 0.85rem; font-weight: 700;">AI 提供者（Provider）</label>
+          <select id="ai-provider" class="select-field">
+            <option value="gemini">Google Gemini API (gemini-2.5-flash)</option>
+            <option value="openai">OpenAI 相容 API / 本機 Ollama</option>
+          </select>
+
+          <label style="font-size: 0.85rem; font-weight: 700;">API Key（僅存於你的瀏覽器本機 LocalStorage，不會上傳任何伺服器）</label>
+          <input type="password" id="ai-api-key" class="input-field" placeholder="貼上 Gemini 或 OpenAI API Key（若不填仍可使用預設互動模式）" />
+
+          <label style="font-size: 0.85rem; font-weight: 700;">自訂 Endpoint 網址（選填，OpenAI / Ollama 用）</label>
+          <input type="text" id="ai-endpoint" class="input-field" placeholder="預設留空即可；本機 Ollama 可填 http://localhost:11434/v1/chat/completions" />
+
+          <div style="display: flex; gap: 10px; margin-top: 8px;">
+            <button class="btn btn-primary" onclick="EasyLearnApp.saveAISettings()">💾 儲存 AI 設定</button>
+            <button class="btn btn-outline" onclick="EasyLearnApp.clearAISettings()">清除金鑰</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">🗂️ 學習進度備份與重置</div>
+          </div>
+          <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 16px;">
+            所有闖關紀錄、六角形能力值、自建題庫皆儲存在瀏覽器本機。換電腦時可匯出 JSON 檔案帶走。
+          </p>
+          <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+            <button class="btn btn-primary" onclick="EasyLearnApp.exportJSON()">📦 匯出完整進度 JSON</button>
+            <label class="btn btn-outline" style="cursor: pointer;">
+              📂 匯入 JSON 進度
+              <input type="file" accept=".json" style="display: none;" onchange="EasyLearnApp.importJSON(event)" />
+            </label>
+            <button class="btn btn-outline" style="border-color: var(--accent-warm); color: var(--accent-warm);" onclick="EasyLearnApp.resetAllData()">
+              🔄 還原預設範例資料
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast-box" class="toast-box"></div>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
+
