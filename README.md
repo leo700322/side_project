@@ -10,6 +10,7 @@
 
 - 方塊：https://leo700322.github.io/side_project/cube/
 - 手勢（電腦 Chrome + USB 鏡頭）：https://leo700322.github.io/side_project/gesture/
+- 輕鬆學習系統（EasyLearn）：https://leo700322.github.io/side_project/easy_learn/
 
 不要雙擊 HTML。鏡頭一定要 https 或 localhost。
 
@@ -21,4 +22,4 @@
 
 `cube/` 是給玻璃反射的乾淨畫面。手勢在 `gesture/`，呼叫同一組 `HoloCube.rotateBy` 與 `setScale`。
 
-規劃：`docs/CUBE_PLAN.md`、`docs/GESTURE_PLAN.md`。這一輪不接平板、兩台不互傳。
+規劃：`docs/CUBE_PLAN.md`、`docs/GESTURE_PLAN.md`、`docs/EASY_LEARN_PLAN.md`。這一輪不接平板、兩台不互傳。
